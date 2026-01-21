@@ -32,6 +32,23 @@ def _style_delta(value: float) -> str:
     return "color: rgba(244, 239, 231, 0.7);"
 
 
+def _cash_mask(df: pd.DataFrame) -> pd.Series:
+    ticker = df["ticker"].fillna("").astype(str)
+    name = df["name"].fillna("").astype(str)
+    return ticker.str.contains("cash", case=False) | name.str.contains(
+        "cash", case=False
+    )
+
+
+def _totals_from_combined(df: pd.DataFrame, prefix: str) -> dict[str, float | int]:
+    market_value_col = f"{prefix}_market_value"
+    shares_col = f"{prefix}_shares"
+    return {
+        "total_aum": df[market_value_col].sum(skipna=True),
+        "holdings_count": int(df[shares_col].notna().sum()),
+    }
+
+
 def _build_styler(
     df: pd.DataFrame, formats: dict[str, str], delta_columns: list[str] | None = None
 ) -> "pd.io.formats.style.Styler":
@@ -220,7 +237,10 @@ def main() -> None:
 
     st.sidebar.header("Compare snapshots")
     baseline_date = st.sidebar.selectbox(
-        "Baseline Date", dates, index=baseline_index, format_func=lambda d: d.isoformat()
+        "Baseline Date",
+        dates,
+        index=baseline_index,
+        format_func=lambda d: d.isoformat(),
     )
     comparison_date = st.sidebar.selectbox(
         "Comparison Date",
@@ -234,6 +254,12 @@ def main() -> None:
         horizontal=True,
     )
     top_n = st.sidebar.slider("Top movers", min_value=5, max_value=20, value=12)
+    hide_cash = st.sidebar.toggle("Hide cash positions", value=False)
+    exclude_cash_from_totals = False
+    if hide_cash:
+        exclude_cash_from_totals = st.sidebar.toggle(
+            "Exclude cash from totals", value=False
+        )
 
     st.sidebar.markdown("---")
     st.sidebar.caption("Source: Amplify holdings feed.")
@@ -241,19 +267,45 @@ def main() -> None:
     if baseline_date == comparison_date:
         st.warning("Baseline and comparison dates are the same.")
 
-    added, removed, changed, combined = compare_holdings(
+    added_raw, removed_raw, changed_raw, combined_raw = compare_holdings(
         baseline_date, comparison_date, DB_PATH
     )
+    added = added_raw
+    removed = removed_raw
+    changed = changed_raw
+    combined = combined_raw
+    if hide_cash:
+        added = added_raw[~_cash_mask(added_raw)].copy()
+        removed = removed_raw[~_cash_mask(removed_raw)].copy()
+        changed = changed_raw[~_cash_mask(changed_raw)].copy()
+        combined = combined_raw[~_cash_mask(combined_raw)].copy()
 
     baseline_totals = get_totals_for_date(baseline_date, DB_PATH)
     comparison_totals = get_totals_for_date(comparison_date, DB_PATH)
+    if hide_cash and exclude_cash_from_totals:
+        baseline_totals = _totals_from_combined(combined, "start")
+        comparison_totals = _totals_from_combined(combined, "end")
+
+    added_for_counts = added
+    removed_for_counts = removed
+    if not (hide_cash and exclude_cash_from_totals):
+        added_for_counts = added_raw
+        removed_for_counts = removed_raw
 
     aum_delta = comparison_totals["total_aum"] - baseline_totals["total_aum"]
-    holdings_delta = comparison_totals["holdings_count"] - baseline_totals["holdings_count"]
+    holdings_delta = (
+        comparison_totals["holdings_count"] - baseline_totals["holdings_count"]
+    )
 
-    aum_delta_class = "delta-pos" if aum_delta > 0 else "delta-neg" if aum_delta < 0 else "delta-neutral"
+    aum_delta_class = (
+        "delta-pos"
+        if aum_delta > 0
+        else "delta-neg" if aum_delta < 0 else "delta-neutral"
+    )
     holdings_delta_class = (
-        "delta-pos" if holdings_delta > 0 else "delta-neg" if holdings_delta < 0 else "delta-neutral"
+        "delta-pos"
+        if holdings_delta > 0
+        else "delta-neg" if holdings_delta < 0 else "delta-neutral"
     )
 
     left_col, right_col = st.columns([2.2, 1.4], gap="large")
@@ -295,7 +347,7 @@ def main() -> None:
                 <div class="metric-label">Holdings Delta</div>
                 <div class="metric-value">{holdings_delta:+d}</div>
                 <div class="metric-delta {holdings_delta_class}">
-                    {len(added)} new / {len(removed)} sold
+                    {len(added_for_counts)} new / {len(removed_for_counts)} sold
                 </div>
             </div>
         </div>
@@ -325,19 +377,25 @@ def main() -> None:
                 marker_color=colors,
                 text=text_values,
                 textposition="outside",
-                hovertemplate="%{y}<br>%{x:,.0f}<extra></extra>"
-                if mover_metric == "Shares"
-                else "%{y}<br>$%{x:,.2f}<extra></extra>",
+                hovertemplate=(
+                    "%{y}<br>%{x:,.0f}<extra></extra>"
+                    if mover_metric == "Shares"
+                    else "%{y}<br>$%{x:,.2f}<extra></extra>"
+                ),
             )
         )
         fig.update_layout(
-            yaxis_title="Share Change" if mover_metric == "Shares" else "Market Value Change",
+            yaxis_title=(
+                "Share Change" if mover_metric == "Shares" else "Market Value Change"
+            ),
             xaxis_title="Ticker",
             showlegend=False,
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
             font=dict(family="IBM Plex Sans", color="#f4efe7"),
-            xaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.08)", zeroline=True),
+            xaxis=dict(
+                showgrid=True, gridcolor="rgba(255,255,255,0.08)", zeroline=True
+            ),
             yaxis=dict(gridcolor="rgba(255,255,255,0.08)"),
             margin=dict(l=40, r=40, t=20, b=40),
             template="plotly_dark",
