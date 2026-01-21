@@ -73,7 +73,7 @@ def compare_holdings(
 
     added = df[df["status"] == "added"].copy()
     removed = df[df["status"] == "removed"].copy()
-    changed = df[df["status"] == "changed"].copy()
+    changed = df[(df["status"] == "changed") & (df["shares_delta"] != 0)].copy()
 
     added = added.sort_values("market_value_delta", ascending=False)
     removed = removed.sort_values("market_value_delta")
