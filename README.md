@@ -24,11 +24,11 @@ Tip: Replace the mock with a real screenshot by exporting the Streamlit page to 
 ## Architecture
 ```mermaid
 flowchart LR
-  A[Amplify holdings page / CSV] --> B[ingest.py]
-  B --> C[(holdings.duckdb)]
-  D[backfill_excel.py] --> C
-  E[GitHub Action] --> B
-  C --> F[app.py (Streamlit)]
+  A["Amplify holdings page / CSV"] --> B["ingest.py"]
+  B --> C["holdings.duckdb"]
+  D["backfill_excel.py"] --> C
+  E["GitHub Action"] --> B
+  C --> F["app.py (Streamlit)"]
 ```
 
 ## Quickstart
