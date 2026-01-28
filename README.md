@@ -1,5 +1,7 @@
 # YYY Holdings Tracker
 
+![YYY Holdings Tracker](assets/hero.svg)
+
 [![Daily holdings fetch](https://github.com/ikgeorgiev/yyy_holdings/actions/workflows/daily_fetch.yml/badge.svg)](https://github.com/ikgeorgiev/yyy_holdings/actions/workflows/daily_fetch.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
@@ -7,16 +9,27 @@
 
 Track, store, and visualize daily holdings for the Amplify YYY ETF. This repo includes a scheduled ingestion job, a DuckDB data store, and a Streamlit dashboard to compare holdings across dates.
 
-## Features
-- Automated ingest of published YYY holdings into DuckDB.
-- Historical backfill from CSV/Excel files.
-- Streamlit dashboard to compare positions, deltas, and totals.
-- Daily updates via GitHub Actions.
+## At a Glance
+- Data source: Amplify YYY holdings page and CSV feed.
+- Update cadence: daily GitHub Action, commits `holdings.duckdb`.
+- Storage: DuckDB table with `date`, `ticker`, `name`, `shares`, `market_value`, `weight`.
+- Stack: Python, pandas, DuckDB, Streamlit, Plotly.
+- UI: compare dates, added/removed/changed positions, totals and deltas.
 
-## Data Pipeline
-- Source: Amplify YYY holdings page and CSV feed.
-- Storage: `holdings.duckdb` (tracked in the repo).
-- Schema: `date`, `ticker`, `name`, `shares`, `market_value`, `weight`.
+## Preview
+![Dashboard preview](assets/dashboard-preview.svg)
+
+Tip: Replace the mock with a real screenshot by exporting the Streamlit page to PNG.
+
+## Architecture
+```mermaid
+flowchart LR
+  A[Amplify holdings page / CSV] --> B[ingest.py]
+  B --> C[(holdings.duckdb)]
+  D[backfill_excel.py] --> C
+  E[GitHub Action] --> B
+  C --> F[app.py (Streamlit)]
+```
 
 ## Quickstart
 Prereqs: Python 3.11+ recommended.
@@ -64,8 +77,9 @@ python ingest.py --db holdings.local.duckdb
 - `holdings.duckdb` - tracked datastore updated by CI.
 - `.github/workflows/daily_fetch.yml` - scheduled ingest job.
 
-## Automation
-The workflow in `.github/workflows/daily_fetch.yml` runs daily and commits updates to `holdings.duckdb`. Update timing depends on upstream publication time.
+## Data and Automation
+- The workflow in `.github/workflows/daily_fetch.yml` runs daily and commits updates to `holdings.duckdb`.
+- Update timing depends on upstream publication time.
 
 ## Contributing
 See `AGENTS.md` for contributor guidelines, style, and workflow notes.
