@@ -17,9 +17,7 @@ Track, store, and visualize daily holdings for the Amplify YYY ETF. This repo in
 - UI: compare dates, added/removed/changed positions, totals and deltas.
 
 ## Preview
-![Dashboard preview](assets/dashboard-preview.svg)
-
-Tip: Replace the mock with a real screenshot by exporting the Streamlit page to PNG.
+![Dashboard preview](assets/yyy.png)
 
 ## Architecture
 ```mermaid
