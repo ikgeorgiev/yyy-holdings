@@ -4,9 +4,22 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from compare import compare_holdings, get_available_dates, get_totals_for_date
+from compare import (
+    compare_holdings,
+    get_available_dates,
+    get_available_funds,
+    get_totals_for_date,
+)
 
 DB_PATH = "holdings.duckdb"
+FUND_NAMES = {
+    "YYY": "Amplify High Income ETF",
+    "PCEF": "Invesco CEF Income Composite ETF",
+}
+FUND_SOURCES = {
+    "YYY": "Amplify holdings feed.",
+    "PCEF": "Invesco holdings API.",
+}
 
 
 def _format_currency(value: float) -> str:
@@ -45,7 +58,9 @@ def _ticker_mask(df: pd.DataFrame, ticker: str) -> pd.Series:
     return tickers.str.upper().eq(ticker.upper())
 
 
-def _position_mask(df: pd.DataFrame, hide_cash: bool, hide_agpxx: bool) -> pd.Series:
+def _position_mask(
+    df: pd.DataFrame, hide_cash: bool, hide_agpxx: bool
+) -> pd.Series:
     mask = pd.Series(False, index=df.index)
     if hide_cash:
         mask |= _cash_mask(df)
@@ -234,22 +249,37 @@ def _inject_styles() -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="YYY Holdings Tracker", layout="wide")
+    st.set_page_config(page_title="ETF Holdings Tracker", layout="wide")
     _inject_styles()
 
     if not Path(DB_PATH).exists():
         st.error("Database not found. Run ingest.py to create holdings.duckdb.")
         st.stop()
 
-    dates = get_available_dates(DB_PATH)
-    if not dates:
+    funds = get_available_funds(DB_PATH)
+    if not funds:
         st.warning("No holdings found. Run ingest.py to load the first snapshot.")
+        st.stop()
+
+    default_fund = "YYY" if "YYY" in funds else funds[0]
+
+    st.sidebar.header("Compare snapshots")
+    selected_fund = st.sidebar.selectbox(
+        "Fund",
+        funds,
+        index=funds.index(default_fund),
+    )
+
+    dates = get_available_dates(selected_fund, DB_PATH)
+    if not dates:
+        st.warning(
+            f"No holdings found for {selected_fund}. Run ingest.py to load snapshots."
+        )
         st.stop()
 
     baseline_index = max(len(dates) - 2, 0)
     comparison_index = len(dates) - 1
 
-    st.sidebar.header("Compare snapshots")
     baseline_date = st.sidebar.selectbox(
         "Baseline Date",
         dates,
@@ -282,19 +312,20 @@ def main() -> None:
         )
 
     st.sidebar.markdown("---")
-    st.sidebar.caption("Source: Amplify holdings feed.")
+    st.sidebar.caption(f"Source: {FUND_SOURCES.get(selected_fund, 'Holdings feed.')}")
 
     if baseline_date == comparison_date:
         st.warning("Baseline and comparison dates are the same.")
 
     added_raw, removed_raw, changed_raw, combined_raw = compare_holdings(
-        baseline_date, comparison_date, DB_PATH
+        baseline_date, comparison_date, selected_fund, DB_PATH
     )
     added = added_raw
     removed = removed_raw
     changed = changed_raw
     combined = combined_raw
     if hide_cash or hide_agpxx:
+        # Optional display filtering for cash/AGPXX rows.
         added = added_raw[
             ~_position_mask(added_raw, hide_cash, hide_agpxx)
         ].copy()
@@ -308,13 +339,15 @@ def main() -> None:
             ~_position_mask(combined_raw, hide_cash, hide_agpxx)
         ].copy()
 
-    baseline_totals = get_totals_for_date(baseline_date, DB_PATH)
-    comparison_totals = get_totals_for_date(comparison_date, DB_PATH)
+    baseline_totals = get_totals_for_date(baseline_date, selected_fund, DB_PATH)
+    comparison_totals = get_totals_for_date(comparison_date, selected_fund, DB_PATH)
     exclude_for_totals = exclude_cash_from_totals or exclude_agpxx_from_totals
     if exclude_for_totals:
         combined_for_totals = combined_raw[
             ~_position_mask(
-                combined_raw, exclude_cash_from_totals, exclude_agpxx_from_totals
+                combined_raw,
+                exclude_cash_from_totals,
+                exclude_agpxx_from_totals,
             )
         ].copy()
         baseline_totals = _totals_from_combined(combined_for_totals, "start")
@@ -325,17 +358,21 @@ def main() -> None:
     if exclude_for_totals:
         added_for_counts = added_raw[
             ~_position_mask(
-                added_raw, exclude_cash_from_totals, exclude_agpxx_from_totals
+                added_raw,
+                exclude_cash_from_totals,
+                exclude_agpxx_from_totals,
             )
         ].copy()
         removed_for_counts = removed_raw[
             ~_position_mask(
-                removed_raw, exclude_cash_from_totals, exclude_agpxx_from_totals
+                removed_raw,
+                exclude_cash_from_totals,
+                exclude_agpxx_from_totals,
             )
         ].copy()
     else:
-        added_for_counts = added_raw
-        removed_for_counts = removed_raw
+        added_for_counts = added
+        removed_for_counts = removed
 
     aum_delta = comparison_totals["total_aum"] - baseline_totals["total_aum"]
     holdings_delta = (
@@ -355,11 +392,13 @@ def main() -> None:
 
     left_col, right_col = st.columns([2.2, 1.4], gap="large")
 
+    fund_name = FUND_NAMES.get(selected_fund, selected_fund)
+
     with left_col:
         hero_html = f"""
         <div class="hero-card">
-            <div class="eyebrow">YYY Holdings Report</div>
-            <div class="hero-title">Amplify High Income ETF</div>
+            <div class="eyebrow">{selected_fund} Holdings Report</div>
+            <div class="hero-title">{fund_name}</div>
             <div class="hero-sub">Snapshot comparison and daily change analytics.</div>
             <div class="pill">Baseline: {baseline_date.isoformat()}</div>
             <div class="pill">Comparison: {comparison_date.isoformat()}</div>

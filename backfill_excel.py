@@ -7,6 +7,7 @@ from typing import Iterable, Optional
 import pandas as pd
 
 from ingest import (
+    DEFAULT_FUND_TICKER,
     DB_PATH,
     _extract_as_of_date,
     _pick_holdings_table,
@@ -77,7 +78,7 @@ def _iter_input_files(path: Path, recursive: bool) -> Iterable[Path]:
 
 
 def ingest_holdings_file(
-    path: Path, db_path: str, date_override: Optional[date]
+    path: Path, db_path: str, date_override: Optional[date], fund_ticker: str
 ) -> pd.DataFrame:
     df = _load_holdings_table(path)
     if df.empty:
@@ -89,19 +90,25 @@ def ingest_holdings_file(
     if as_of_date is None:
         raise ValueError("Unable to infer as-of date.")
 
-    validated = validate_holdings(df, as_of_date)
+    validated = validate_holdings(df, as_of_date, fund_ticker=fund_ticker)
     upsert_holdings(validated, db_path)
     return validated
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Backfill YYY holdings from Excel/CSV files."
+        description="Backfill ETF holdings from Excel/CSV files."
     )
     parser.add_argument(
         "path", help="Excel/CSV file or directory containing Excel/CSV files."
     )
     parser.add_argument("--db", dest="db_path", default=DB_PATH)
+    parser.add_argument(
+        "--fund",
+        dest="fund",
+        default=DEFAULT_FUND_TICKER,
+        help="Fund ticker to tag rows with (e.g. YYY, PCEF).",
+    )
     parser.add_argument(
         "--date",
         dest="as_of_date",
@@ -119,6 +126,7 @@ def main() -> None:
     date_override = None
     if args.as_of_date:
         date_override = datetime.strptime(args.as_of_date, "%Y-%m-%d").date()
+    fund_ticker = args.fund.strip().upper()
 
     files = list(_iter_input_files(target_path, args.recursive))
     if not files:
@@ -127,10 +135,12 @@ def main() -> None:
     failures = 0
     for file_path in files:
         try:
-            validated = ingest_holdings_file(file_path, args.db_path, date_override)
+            validated = ingest_holdings_file(
+                file_path, args.db_path, date_override, fund_ticker
+            )
             holding_date = validated["date"].iloc[0]
             print(
-                f"Ingested {len(validated)} holdings for {holding_date} from {file_path.name}."
+                f"Ingested {len(validated)} holdings for {fund_ticker} on {holding_date} from {file_path.name}."
             )
         except Exception as exc:
             failures += 1

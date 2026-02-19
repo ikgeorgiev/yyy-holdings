@@ -1,4 +1,4 @@
-name: Daily YYY holdings fetch
+name: Daily ETF holdings fetch
 
 on:
   schedule:
@@ -28,7 +28,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run ingest
-        run: python ingest.py
+        run: python ingest.py --all-funds
 
       - name: Commit and push if changed
         run: |
@@ -39,5 +39,5 @@ jobs:
             echo "No changes to commit."
             exit 0
           fi
-          git commit -m "Update YYY holdings"
+          git commit -m "Update ETF holdings"
           git push
