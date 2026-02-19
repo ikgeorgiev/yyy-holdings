@@ -3,6 +3,7 @@ name: Daily ETF holdings fetch
 on:
   schedule:
     - cron: "0 7 * * *"
+    - cron: "0 13 * * *" # ~15:00 Sofia (UTC+2); during DST this runs at ~16:00
   workflow_dispatch:
 
 permissions:
