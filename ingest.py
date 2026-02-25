@@ -5,7 +5,7 @@ from io import BytesIO, StringIO
 import re
 import time
 from typing import Iterable, Optional
-from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import urljoin
 
 import duckdb
 import pandas as pd
@@ -344,30 +344,16 @@ def _fetch_invesco_holdings_api(
     if not api_url:
         return None
 
-    def _with_cache_buster(url: str, salt: int) -> str:
-        split_url = urlsplit(url)
-        query = dict(parse_qsl(split_url.query, keep_blank_values=True))
-        query["cb"] = str(int(time.time() * 1000) + salt)
-        return urlunsplit(
-            (
-                split_url.scheme,
-                split_url.netloc,
-                split_url.path,
-                urlencode(query),
-                split_url.fragment,
-            )
-        )
-
     payload = None
     request_header_variants: list[dict[str, str]] = [
+        {"Accept": "application/json, text/plain, */*"},
         {},  # Invesco often rejects browser-like headers with 406.
         {"User-Agent": headers.get("User-Agent", "python-requests")},
     ]
     for attempt in range(4):
-        request_url = _with_cache_buster(api_url, attempt)
         for request_headers in request_header_variants:
             try:
-                response = requests.get(request_url, headers=request_headers, timeout=30)
+                response = requests.get(api_url, headers=request_headers, timeout=30)
                 response.raise_for_status()
                 payload = response.json()
                 break
@@ -507,7 +493,15 @@ def fetch_holdings(
         invesco_df = _fetch_invesco_holdings_api(api_url, headers)
         if invesco_df is not None and not invesco_df.empty:
             return invesco_df
-        raise ValueError("Unable to fetch full PCEF holdings from Invesco API.")
+
+        # Keep ingest available if the API is temporarily unavailable.
+        fallback_df = _fetch_pcef_holdings(url, profile_url, headers)
+        if fallback_df is not None and not fallback_df.empty:
+            return fallback_df
+
+        raise ValueError(
+            "Unable to fetch full PCEF holdings from Invesco API or fallback holdings page."
+        )
 
     direct_csv = _fetch_csv(direct_csv_url, headers)
     if direct_csv is not None and not direct_csv.empty:
