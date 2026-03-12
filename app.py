@@ -14,10 +14,12 @@ from compare import (
 DB_PATH = "holdings.duckdb"
 FUND_NAMES = {
     "YYY": "Amplify High Income ETF",
+    "YYYM": "Amplify Municipal CEF High Income ETF",
     "PCEF": "Invesco CEF Income Composite ETF",
 }
 FUND_SOURCES = {
     "YYY": "Amplify holdings feed.",
+    "YYYM": "Amplify holdings feed.",
     "PCEF": "Invesco holdings API.",
 }
 

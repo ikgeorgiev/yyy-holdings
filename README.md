@@ -1,4 +1,4 @@
-# ETF Holdings Tracker (YYY + PCEF)
+# ETF Holdings Tracker (YYY + YYYM + PCEF)
 
 ![ETF Holdings Tracker](assets/hero.svg)
 
@@ -7,11 +7,12 @@
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/streamlit-app-FF4B4B?logo=streamlit&logoColor=white)
 
-Track, store, and visualize daily holdings for multiple ETFs (currently `YYY` and `PCEF`). This repo includes a scheduled ingestion job, a DuckDB data store, and a Streamlit dashboard to compare holdings across dates.
+Track, store, and visualize daily holdings for multiple ETFs (currently `YYY`, `YYYM`, and `PCEF`). This repo includes a scheduled ingestion job, a DuckDB data store, and a Streamlit dashboard to compare holdings across dates.
 
 ## At a Glance
 - Data sources:
   - `YYY`: Amplify holdings page and CSV feed.
+  - `YYYM`: Amplify holdings page and CSV feed.
   - `PCEF`: Invesco holdings API endpoint referenced by the product page.
 - Update cadence: daily GitHub Action, commits `holdings.duckdb`.
 - Storage: DuckDB table with `date`, `fund`, `ticker`, `name`, `shares`, `market_value`, `weight`.
@@ -62,6 +63,7 @@ python ingest.py --all-funds
 Fetch one fund only:
 ```powershell
 python ingest.py --fund YYY
+python ingest.py --fund YYYM
 python ingest.py --fund PCEF
 ```
 

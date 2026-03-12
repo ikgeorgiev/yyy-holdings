@@ -22,6 +22,13 @@ FUND_CONFIGS: dict[str, dict[str, Optional[str]]] = {
         "download_csv_url": None,
         "source_label": "Amplify holdings feed",
     },
+    "YYYM": {
+        "name": "Amplify Municipal CEF High Income ETF",
+        "holdings_url": "https://amplifyetfs.com/yyym-holdings/",
+        "feed_url": "https://amplifyetfs.com/wp-content/uploads/feeds/AmplifyWeb.40XL.XL_Holdings.csv",
+        "download_csv_url": None,
+        "source_label": "Amplify holdings feed",
+    },
     "PCEF": {
         "name": "Invesco CEF Income Composite ETF",
         "holdings_url": "https://www.invesco.com/us/en/financial-products/etfs/invesco-cef-income-composite-etf.html#Portfolio",
