@@ -20,14 +20,16 @@ FUND_CONFIGS: dict[str, dict[str, Optional[str]]] = {
         "holdings_url": "https://amplifyetfs.com/yyy-holdings/",
         "feed_url": "https://amplifyetfs.com/wp-content/uploads/feeds/AmplifyWeb.40XL.XL_Holdings.csv",
         "download_csv_url": None,
-        "source_label": "Amplify holdings feed",
+        "firestore_fund": "YYY",
+        "source_label": "Amplify holdings feed (Firestore)",
     },
     "YYYM": {
         "name": "Amplify Municipal CEF High Income ETF",
         "holdings_url": "https://amplifyetfs.com/yyym-holdings/",
         "feed_url": "https://amplifyetfs.com/wp-content/uploads/feeds/AmplifyWeb.40XL.XL_Holdings.csv",
         "download_csv_url": None,
-        "source_label": "Amplify holdings feed",
+        "firestore_fund": "YYYM",
+        "source_label": "Amplify holdings feed (Firestore)",
     },
     "PCEF": {
         "name": "Invesco CEF Income Composite ETF",
@@ -41,6 +43,12 @@ FUND_CONFIGS: dict[str, dict[str, Optional[str]]] = {
 }
 HOLDINGS_URL = FUND_CONFIGS[DEFAULT_FUND_TICKER]["holdings_url"] or ""
 HOLDINGS_FEED_URL = FUND_CONFIGS[DEFAULT_FUND_TICKER]["feed_url"] or ""
+
+# Amplify migrated its holdings off the static CSV feed (now 404) to a public
+# Firestore database that the website reads client-side. The project id and API
+# key below are the public values embedded in amplifyetfs.com's page scripts.
+AMPLIFY_FIRESTORE_PROJECT = "amplify-etfs-data-feed"
+AMPLIFY_FIRESTORE_API_KEY = "AIzaSyCibhGo4lu8ZALtBvf_ZT351BDMUPqOYjc"
 
 
 def get_supported_funds() -> list[str]:
@@ -331,6 +339,90 @@ def _fetch_holdings_feed(
     return df
 
 
+def _firestore_scalar(value: Optional[dict]):
+    """Unwrap a single Firestore REST typed value (e.g. {"stringValue": "x"})."""
+    if not isinstance(value, dict) or not value:
+        return None
+    type_key, raw = next(iter(value.items()))
+    if type_key == "nullValue":
+        return None
+    if type_key == "integerValue":
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return raw
+    if type_key == "doubleValue":
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return raw
+    if type_key == "booleanValue":
+        return bool(raw)
+    # stringValue, timestampValue, referenceValue, etc.
+    return raw
+
+
+def _fetch_amplify_firestore_holdings(
+    firestore_fund: Optional[str], headers: dict[str, str]
+) -> Optional[pd.DataFrame]:
+    """Fetch the latest holdings for an Amplify fund from its public Firestore feed.
+
+    The website runs a query equivalent to: from the ``holdings`` subcollection of
+    ``funds/{fund}``, order by document id (the as-of date) descending, limit 1. The
+    matched document holds the full holdings list in a ``holdings`` array field.
+    """
+    if not firestore_fund:
+        return None
+
+    url = (
+        f"https://firestore.googleapis.com/v1/projects/{AMPLIFY_FIRESTORE_PROJECT}"
+        f"/databases/(default)/documents/funds/{firestore_fund}:runQuery"
+        f"?key={AMPLIFY_FIRESTORE_API_KEY}"
+    )
+    payload = {
+        "structuredQuery": {
+            "from": [{"collectionId": "holdings"}],
+            "orderBy": [
+                {"field": {"fieldPath": "__name__"}, "direction": "DESCENDING"}
+            ],
+            "limit": 1,
+        }
+    }
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response.raise_for_status()
+        results = response.json()
+    except (requests.RequestException, ValueError):
+        return None
+
+    document = None
+    for entry in results if isinstance(results, list) else []:
+        if isinstance(entry, dict) and entry.get("document"):
+            document = entry["document"]
+            break
+    if not document:
+        return None
+
+    fields = document.get("fields", {})
+    holdings = (
+        fields.get("holdings", {}).get("arrayValue", {}).get("values", [])
+    )
+    rows = []
+    for item in holdings:
+        row_fields = item.get("mapValue", {}).get("fields", {})
+        rows.append({key: _firestore_scalar(val) for key, val in row_fields.items()})
+    if not rows:
+        return None
+
+    df = pd.DataFrame(rows)
+    as_of = _firestore_scalar(fields.get("asOfDate")) or document.get("name", "").rsplit(
+        "/", 1
+    )[-1]
+    if as_of:
+        df["asOfDate"] = as_of
+    return df
+
+
 def _fetch_csv(csv_url: Optional[str], headers: dict[str, str]) -> Optional[pd.DataFrame]:
     if not csv_url:
         return None
@@ -486,6 +578,7 @@ def fetch_holdings(
     direct_csv_url: Optional[str] = None,
     profile_url: Optional[str] = None,
     api_url: Optional[str] = None,
+    firestore_fund: Optional[str] = None,
 ) -> pd.DataFrame:
     fund_ticker = fund_ticker.upper()
     headers = {
@@ -509,6 +602,10 @@ def fetch_holdings(
         raise ValueError(
             "Unable to fetch full PCEF holdings from Invesco API or fallback holdings page."
         )
+
+    firestore_df = _fetch_amplify_firestore_holdings(firestore_fund, headers)
+    if firestore_df is not None and not firestore_df.empty:
+        return firestore_df
 
     direct_csv = _fetch_csv(direct_csv_url, headers)
     if direct_csv is not None and not direct_csv.empty:
@@ -664,6 +761,7 @@ def main() -> None:
         direct_csv_url = fund_config["download_csv_url"]
         profile_url = fund_config.get("profile_url")
         api_url = fund_config.get("api_url")
+        firestore_fund = fund_config.get("firestore_fund")
 
         raw = fetch_holdings(
             holdings_url,
@@ -672,6 +770,7 @@ def main() -> None:
             direct_csv_url=direct_csv_url,
             profile_url=profile_url,
             api_url=api_url,
+            firestore_fund=firestore_fund,
         )
         validated = validate_holdings(raw, as_of_date, fund_ticker=fund)
         upsert_holdings(validated, args.db_path)
